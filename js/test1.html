@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+    <script src="three.js-master/build/three.js"></script>
+    <script src="three.js-master/examples/js/controls/OrbitControls.js"></script>
+    <script src="three.js-master/examples/js/loaders/STLLoader.js"></script>
+    <script src="three.js-master/examples/js/renderers/CSS2DRenderer.js"></script>
+    <script src="three.js-master/examples/js/libs/stats.min.js"></script>
+</head>
+
+<body>
+    <div>
+        <button onclick="loadSTL()">加载STL</button>
+        <button onclick="showPointModel()">对象/点模型切换</button>
+        <button onclick="selectModelCut()">三角面片选择</button>
+        <button onclick="selectModelText()">添加文字</button>
+        <input type="color" name="color" id="color" onchange="selectModelColor()">
+        <input type="color" name="triangle_color" id="triangle_color" onchange="selectTriangleColor()">
+    </div>
+    <script>
+        // 记录模型状态
+        var ModelType = false;
+        // 鼠标监听事件(选择片)
+        var MouseLis = false;
+        // 文字监听
+        var MouseText = false;
+        let triangleColor = 0xff0000;
+        var points = [];
+
+        var scene;
+        // 相机
+        let camera;
+        var width;
+        var height;
+        var renderer;
+
+        let STL_Model;
+        let material;
+        let mesh = undefined;
+
+        //射线
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        // 性能插件
+        // var stats = initStats();
+
+        createScene();
+        createAxisHelper();
+        createLight();
+        createCamera();
+        createRenderer();
+        render();
+        var controls = new THREE.OrbitControls(camera,renderer.domElement);//创建控件对象
+        controls.addEventListener('change', render);//监听鼠标、键盘事件
+
+        /* 性能插件 */
+        function initStats() {
+            var stats = new Stats();
+            document.body.appendChild(stats.domElement);
+            return stats;
+        }
+
+        /* 数据更新 */
+        function update() {
+            stats.update();
+        }
+
+        function loadSTL() {
+            /**
+            * stl数据加载
+            */
+            var loader = new THREE.STLLoader();
+            // 立方体默认尺寸长宽高各200
+            loader.load('../Bovine heart_stl.stl', function (geometry) {   // C:\Users\Administrator\Desktop\test\
+                // 控制台查看加载放回的threejs对象结构
+                // console.log(geometry);
+                // 查看顶点数，一个立方体6个矩形面，每个矩形面至少2个三角面，每个三角面3个顶点，
+                // 如果没有索引index复用顶点，就是说一个立方体至少36个顶点
+                console.log(geometry.attributes.position.count);
+                material = new THREE.MeshLambertMaterial({
+                    color: 0x00ffff,
+                    // opacity:0.1,
+                    // transparent:true
+                }); //材质对象Material
+                mesh = new THREE.Mesh(geometry, material); //网格模型对象Mesh
+                scene.add(mesh); //网格模型添加到场景中
+                
+                // var material = new THREE.PointsMaterial({
+                //     color: 0x000000,
+                //     size: 0.5//点对象像素尺寸
+                // }); //材质对象
+                // var points = new THREE.Points(geometry, material); //点模型对象
+                // scene.add(points); //点对象添加到场景中
+                render();
+            })
+        }
+
+        function showPointModel(){
+            if(ModelType === false){
+                ModelType = true;
+                material.wireframe = true;
+                render();
+            }
+            else{
+                ModelType = false;
+                material.wireframe = false;
+                render();
+            }
+        }
+
+        function selectModelCut() {
+            if (MouseLis === false){
+                MouseLis = true;
+                window.addEventListener("mousedown", onDocumentMouseDown, false); //鼠标点击监听
+            }
+            else{
+                MouseLis = false;
+                window.removeEventListener("mousedown", onDocumentMouseDown);
+            }
+        }
+
+        function onDocumentMouseDown(event) {
+            // 点击鼠标左键
+            if(event.button==0 && event.shiftKey){
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                let intersects = raycaster.intersectObject(mesh);
+                if (intersects.length > 0) {
+                    let intersect = intersects[0];
+                    let face = intersect.face;
+                    // console.log(face); //将选中的三角面信息打印到控制台
+                    // 通过面的三个点索引值找到顶点坐标
+                    // Three.js而言有两种几何体类型Geometry(绘制出来)和BufferGeometry(外部加载出来)
+                    // Geometry使用vertices获取顶点数据
+                    // BufferGeometr使用.attributes和.index两个属性访问顶点数据
+                    let v1_x = mesh.geometry.attributes.position.getX(face.a);
+                    let v1_y = mesh.geometry.attributes.position.getY(face.a);
+                    let v1_z = mesh.geometry.attributes.position.getZ(face.a);
+                    let v2_x = mesh.geometry.attributes.position.getX(face.b);
+                    let v2_y = mesh.geometry.attributes.position.getY(face.b);
+                    let v2_z = mesh.geometry.attributes.position.getZ(face.b);
+                    let v3_x = mesh.geometry.attributes.position.getX(face.c);
+                    let v3_y = mesh.geometry.attributes.position.getY(face.c);
+                    let v3_z = mesh.geometry.attributes.position.getZ(face.c);
+
+                    //显示三角面
+                    var triangle_material = new THREE.MeshStandardMaterial({
+                        color: triangleColor,
+                        side: THREE.DoubleSide
+                    });
+                    let faceGeometry = new THREE.Geometry();
+                    faceGeometry.vertices.push(new THREE.Vector3(v1_x,v1_y,v1_z));
+                    faceGeometry.vertices.push(new THREE.Vector3(v2_x,v2_y,v2_z));
+                    faceGeometry.vertices.push(new THREE.Vector3(v3_x,v3_y,v3_z));
+
+                    let face3 = new THREE.Face3(0, 1, 2, face.normal, 0x00cc00, 0);
+                    faceGeometry.faces.push(face3);
+                    faceGeometry.computeFaceNormals();
+                    faceGeometry.computeVertexNormals();
+                    let faceMesh = new THREE.Mesh(faceGeometry, triangle_material);
+
+                    scene.add(faceMesh);
+                    render();
+                }
+            }
+        }
+
+        function createScene(){
+            /**
+            * 场景设置
+            */
+            scene = new THREE.Scene();
+        }
+
+        function createAxisHelper(){
+            // 辅助坐标系 参数250表示坐标系大小，可以根据场景大小去设置
+            var axisHelper = new THREE.AxisHelper(250);
+            scene.add(axisHelper);
+        }
+
+        function createLight(){
+            /**
+            * 光源设置
+            */
+            //点光源
+            var point = new THREE.PointLight(0xffffff);
+            point.position.set(400, 200, 300); //点光源位置
+            scene.add(point); //点光源添加到场景中
+            // 点光源2  位置和point关于原点对称
+            var point2 = new THREE.PointLight(0xffffff);
+            point2.position.set(-400, -200, -300); //点光源位置
+            scene.add(point2); //点光源添加到场景中
+            //环境光
+            var ambient = new THREE.AmbientLight(0x444444);
+            scene.add(ambient);
+        }
+
+        function createCamera(){
+            /**
+            * 相机设置
+            */
+            width = window.innerWidth; //窗口宽度
+            height = window.innerHeight; //窗口高度
+            var k = width / height; //窗口宽高比
+            var s = 200; //三维场景显示范围控制系数，系数越大，显示的范围越大
+            //创建相机对象
+            camera = new THREE.OrthographicCamera(-s * k, s * k, s, -s, 1, 1000);
+            camera.position.set(200, 300, 200); //设置相机位置
+            camera.lookAt(scene.position); //设置相机方向(指向的场景对象)
+        }
+
+        function createRenderer() {
+            /**
+            * 创建渲染器对象
+            */
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(width, height);//设置渲染区域尺寸
+            renderer.setClearColor(0xb9d3ff, 1); //设置背景颜色
+            document.body.appendChild(renderer.domElement); //body元素中插入canvas对象
+        }
+
+        //执行渲染操作   指定场景、相机作为参数
+        // renderer.render(scene, camera);
+        // 渲染函数
+        function render() {
+            renderer.render(scene,camera);//执行渲染操作
+        }
+
+        function selectModelColor() {
+            /**
+            * 修改模型颜色
+            */
+            var color = document.getElementById("color");
+            material.color = new THREE.Color(color.value);
+            render();
+        }
+
+        function selectTriangleColor() {
+            /**
+            * 修改三角片面颜色
+            */
+            var color = document.getElementById("triangle_color");
+            triangleColor = color.value;
+        }
+
+        function selectModelText() {
+            if (MouseText === false){
+                MouseText = true;
+                window.addEventListener("mousedown", addText, false); //鼠标点击监听
+            }
+            else{
+                MouseText = false;
+                window.removeEventListener("mousedown", addText);
+            }
+        }
+
+        var pointsArray = [];
+        var window_mouse = true;
+        function addText(){
+            /**
+            * 文字添加
+            */
+           if(event.button==0 && event.ctrlKey){
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                // 获取模型上的点
+                if(pointsArray.length == 0){
+                    raycaster.setFromCamera(mouse, camera);
+                    let intersects = raycaster.intersectObject(mesh);
+                    if (intersects.length > 0) {
+                        let intersect = intersects[0];
+                        let face = intersect.face;
+                        let v1_x = mesh.geometry.attributes.position.getX(face.a);
+                        let v1_y = mesh.geometry.attributes.position.getY(face.a);
+                        let v1_z = mesh.geometry.attributes.position.getZ(face.a);
+                        /* 创建点 */
+                        var pointsGeometry = new THREE.Geometry();
+                        pointsGeometry.vertices.push(new THREE.Vector3(v1_x,v1_y,v1_z));
+
+                        var starsMaterial = new THREE.PointsMaterial({color: 0x888888,size:10})
+                        var starsPoint = new THREE.Points(pointsGeometry, starsMaterial);
+                        pointsArray.push(starsPoint);
+                        // scene.add(starsPoint);
+                    }
+                }
+                else{
+                    var normal = new THREE.Vector3(0, 1, 0);
+                    /* 创建平面 */
+                    // var planeGround = new THREE.Plane(normal, 0);
+                    /* 从相机发出一条射线经过鼠标点击的位置 */
+                    raycaster.setFromCamera(mouse, camera);
+                    /* 获取射线 */
+                    var ray = raycaster.ray;
+                    /* 计算相机到射线的对象，可能有多个对象，返回一个数组，按照距离相机远近排列 */
+                    // var intersects = ray.intersectPlane(planeGround);
+                    var intersects = ray.origin;
+                    console.log("x:"+intersects.x+" y:"+intersects.y+" z:"+intersects.z);
+                    if (!window_mouse){
+                        window.addEventListener('mousemove', onMouseMove, false);
+                        /* 依据 windwo_mouse 标识避免事件的重复添加 */
+                        window_mouse = true;
+                    }
+                    /* 创建点 */
+                    var pointsGeometry = new THREE.Geometry();
+                    pointsGeometry.vertices.push(intersects);
+                    var pointsMaterial = new THREE.PointsMaterial({color:0xff0000, size: 3});
+                    var points = new THREE.Points(pointsGeometry, pointsMaterial);
+                    pointsArray.push(points);
+                    /* 创建线段 */
+                    var lineGeometry = new THREE.Geometry();
+                    var lineMaterial = new THREE.LineBasicMaterial({color: 0x000000});
+                    if (pointsArray.length >= 2) {
+                        lineGeometry.vertices.push(pointsArray[0].geometry.vertices[0], pointsArray[1].geometry.vertices[0]);
+                        var line = new THREE.Line(lineGeometry, lineMaterial);
+                        pointsArray.shift();
+                        scene.add(line);
+                        pointsArray.length = 0;
+                        scene.add(points);
+                        // 创建文字（精灵）
+                        var spriteX = makeTextSprite( "测试文字",
+                        {
+                            fontsize: 100,
+                            borderColor: {r:255, g:0, b:0, a:0.4},/* 边框黑色 */
+                            backgroundColor: {r:255, g:255, b:255, a:0.9}/* 背景颜色 */
+                        } );
+                        spriteX.center = new THREE.Vector2(0, 0);
+                        scene.add( spriteX );
+                        spriteX.position.set(intersects.x, intersects.y, intersects.z);
+                    }
+                }
+            }
+        }
+
+        /* 创建字体精灵 */
+        function makeTextSprite(message, parameters) {
+            if ( parameters === undefined ) parameters = {};
+            var fontface = parameters.hasOwnProperty("fontface") ?
+                parameters["fontface"] : "Arial";
+            /* 字体大小 */
+            var fontsize = parameters.hasOwnProperty("fontsize") ?
+                parameters["fontsize"] : 18;
+            /* 边框厚度 */
+            var borderThickness = parameters.hasOwnProperty("borderThickness") ?
+                parameters["borderThickness"] : 4;
+            /* 边框颜色 */
+            var borderColor = parameters.hasOwnProperty("borderColor") ?
+                parameters["borderColor"] : { r:0, g:0, b:0, a:1.0 };
+            /* 背景颜色 */
+            var backgroundColor = parameters.hasOwnProperty("backgroundColor") ?
+                parameters["backgroundColor"] : { r:255, g:255, b:255, a:1.0 };
+            /* 创建画布 */
+            var canvas = document.createElement('canvas');
+            var context = canvas.getContext('2d');
+            /* 字体加粗 */
+            context.font = "Bold " + fontsize + "px " + fontface;
+            /* 获取文字的大小数据，高度取决于文字的大小 */
+            var metrics = context.measureText( message );
+            var textWidth = metrics.width;
+            /* 背景颜色 */
+            context.fillStyle = "rgba(" + backgroundColor.r + "," + backgroundColor.g + ","
+                + backgroundColor.b + "," + backgroundColor.a + ")";
+            /* 边框的颜色 */
+            context.strokeStyle = "rgba(" + borderColor.r + "," + borderColor.g + ","
+                + borderColor.b + "," + borderColor.a + ")";
+            context.lineWidth = borderThickness;
+            /* 绘制圆角矩形 */
+            roundRect(context, borderThickness/2, borderThickness/2, textWidth + borderThickness, fontsize * 1.4 + borderThickness, 6);
+            /* 字体颜色 */
+            context.fillStyle = "rgba(0, 0, 0, 1.0)";
+            context.fillText( message, borderThickness, fontsize + borderThickness);
+            /* 画布内容用于纹理贴图 */
+            var texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            var spriteMaterial = new THREE.SpriteMaterial({ map: texture } );
+            var sprite = new THREE.Sprite( spriteMaterial );
+            console.log(sprite.spriteMaterial);
+            /* 缩放比例 */
+            sprite.scale.set(10,5,0);
+            return sprite;
+        }
+
+        /* 绘制圆角矩形 */
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x+r, y);
+            ctx.lineTo(x+w-r, y);
+            ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+            ctx.lineTo(x+w, y+h-r);
+            ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+            ctx.lineTo(x+r, y+h);
+            ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+            ctx.lineTo(x, y+r);
+            ctx.quadraticCurveTo(x, y, x+r, y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+    </script>
+</body>
+
+</html>
